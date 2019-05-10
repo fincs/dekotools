@@ -40,7 +40,7 @@ class MmeDocument
 
 public:
 	bool Load(const char* fileName);
-	void Print();
+	void GenerateHeader(FILE* f, const char* name, uint8_t subchannel);
 
 	bool VisitEqu(std::string&& ident, int32_t value);
 	bool VisitLocalLabel(std::string&& ident);
