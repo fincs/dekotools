@@ -69,7 +69,7 @@ bool MmeDocument::Load(const char* fileName)
 	fclose(fin);
 
 	if (ret==0)
-		return ResolveLabels();
+		return ResolveLocalLabels() && ResolveLabels();
 
 	return false;
 }
@@ -84,39 +84,24 @@ void MmeDocument::Print()
 
 bool MmeDocument::VisitEqu(std::string&& ident, int32_t value)
 {
-	auto it = m_equs.find(ident);
-	if (it == m_equs.end())
-	{
-		m_equs.emplace( std::move(ident), value );
-		return true;
-	}
-	return false;
+	auto ret = m_equs.emplace( std::move(ident), value );
+	return ret.second;
 }
 
 bool MmeDocument::VisitLocalLabel(std::string&& ident)
 {
-	auto it = m_localLabels.find(ident);
-	if (it == m_localLabels.end())
-	{
-		m_localLabels.emplace( std::move(ident), m_code.size() );
-		return true;
-	}
-	return true;
+	auto ret = m_localLabels.emplace( std::move(ident), m_code.size() );
+	return ret.second;
 }
 
 bool MmeDocument::VisitLabel(std::string&& ident, bool exported)
 {
 	if (!ResolveLocalLabels())
 		return false;
-	auto it = m_labels.find(ident);
-	if (it == m_labels.end())
-	{
-		auto ret = m_labels.emplace( std::move(ident), m_code.size() );
-		if (exported)
-			m_exports.push_back(ret.first);
-		return true;
-	}
-	return true;
+	auto ret = m_labels.emplace( std::move(ident), m_code.size() );
+	if (ret.second && exported)
+		m_exports.push_back(ret.first);
+	return ret.second;
 }
 
 void MmeDocument::VisitInstruction(int32_t inst)

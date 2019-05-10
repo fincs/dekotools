@@ -136,7 +136,7 @@ I_SOURCE:
 	KW_LDI EXPR { $$ = mme::MakeRead(0, $2); } |
 	KW_LD REGISTER { $$ = mme::MakeRead($2, 0); } |
 	KW_NOT REGISTER { $$ = mme::MakeAlu(aluop::Nand, $2, $2); } |
-	KW_NEG REGISTER { $$ = mme::MakeAlu(aluop::Add, 0, $2); } |
+	KW_NEG REGISTER { $$ = mme::MakeAlu(aluop::Subtract, 0, $2); } |
 	KW_INC REGISTER { $$ = mme::MakeAddImmediate($2, +1); } |
 	KW_DEC REGISTER { $$ = mme::MakeAddImmediate($2, -1); } |
 	KW_LDR REGISTER EXPR { $$ = mme::MakeRead($2, $3); } |
