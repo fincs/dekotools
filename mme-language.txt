@@ -1,0 +1,180 @@
+Comments
+
+  # This is a comment
+
+Registers
+
+  rz r1 r2 r3 r4 r5 r6 r7
+
+Values (expressions)
+
+  1234       (decimal)
+  0x12af3    (hex)
+  (expr)     (expression)
+    1+2
+    1-2
+    1*2
+    1/2
+    1%2
+    1&2
+    1|2
+    1^2
+    1<<2
+    1>>2
+    -1
+    +1
+    ~1
+    regid'value = ((regid&0xFFF) | ((incr&0x3F)<<12))
+    base[index] = base + index
+
+Directives
+
+  %equ identifier expression
+
+Instruction forms
+
+  {inst}
+  *{inst}
+  nop = addi rz 0 to rz
+  exit = *addi rz 0 to rz
+
+Result operations
+
+  IgnoreAndFetch
+
+    fetch rDst
+
+  Move
+
+    {op} to rDst
+
+  MoveAndSetMethod
+
+    {op} to rDst addr
+    {op} to addr = {op} to rz addr
+
+  FetchAndSend
+
+    {op} to mem; fetch rDst
+
+  MoveAndSend
+
+    {op} to rDst mem
+    {op} to mem = {op} to rz mem
+
+  FetchAndSetMethod
+
+    {op} to addr; fetch rDst
+
+  MoveAndSetMethodFetchAndSend
+
+    {op} to rDst addr; fetch mem
+    {op} to addr; fetch mem = {op} to rz addr; fetch mem
+
+  MoveAndSetMethodSend
+
+    {op} to rDst addr'mem
+    {op} to addr'mem = {op} to rz addr'mem
+
+Result operations (sorted by format)
+
+  fetch rDst                   IgnoreAndFetch
+  {op} to addr                 MoveAndSetMethod
+  {op} to addr; fetch mem      MoveAndSetMethodFetchAndSend
+  {op} to addr; fetch rDst     FetchAndSetMethod
+  {op} to addr'mem             MoveAndSetMethodSend
+  {op} to mem                  MoveAndSend
+  {op} to mem; fetch rDst      FetchAndSend
+  {op} to rDst                 Move
+  {op} to rDst addr            MoveAndSetMethod
+  {op} to rDst addr; fetch mem MoveAndSetMethodFetchAndSend
+  {op} to rDst addr'mem        MoveAndSetMethodSend
+  {op} to rDst mem             MoveAndSend
+
+Operations
+
+  ALU operations
+
+    add rA rB
+    adc rA rB
+    sub rA rB
+    sbc rA rB
+    xor rA rB
+    orr rA rB
+    and rA rB
+    bic rA rB
+    nan rA rB
+    not rA = nan rA rA
+    neg rA = sub rz rA
+
+  AddImmediate
+
+    addi rA imm
+    subi rA imm = addi rA (-imm)
+    inc rA = addi rA 1
+    dec rA = addi rA -1
+    rA = addi rA 0
+    imm = addi rz imm
+
+  ExtractInsert
+
+    ei bA:rA bB:rB size
+    bfl bA:rA size = ei 0:rz bA:rA size
+    bit rA index = ei 0:rz index:rA 1
+    lsl rA shift = ei shift:rz 0:rA (32-shift)
+    lsr rA shift = ei 0:rz shift:rA (32-shift)
+    mask rA size = ei 0:rz 0:rA size
+
+  ExtractShiftLeftImmediate
+
+    esli bA:rA rB size
+
+  ExtractShiftLeftRegister
+
+    eslr rA bB:rB size
+
+  Read
+
+    ldr rA imm
+    ld rA = ldr rA 0
+    ldi imm = ldr rz imm
+
+  Branch
+
+    bz rA target
+    bza rA target
+    bnz rA target
+    bnza rA target
+    b target = bz rz target
+    ba target = bza rz target
+
+Operations (sorted by format, not including branches)
+
+    imm
+    ldi imm
+    rA
+    ld rA
+    not rA
+    neg rA
+    inc rA
+    dec rA
+    ldr rA imm
+    addi rA imm
+    subi rA imm
+    bit rA index
+    lsl rA shift
+    lsr rA shift
+    mask rA size
+    bfl bA:rA size
+    add rA rB
+    adc rA rB
+    sub rA rB
+    sbc rA rB
+    xor rA rB
+    orr rA rB
+    and rA rB
+    bic rA rB
+    nan rA rB
+    eslr rA bB:rB size
+    esli bA:rA rB size
+    ei bA:rA bB:rB size

@@ -1,0 +1,91 @@
+# This is a test
+
+%equ NVC0_NO_OPERATION       0x040 # a comment goes here
+%equ NVC0_WAIT_FOR_IDLE      0x044
+%equ NVC0_3D_RT_ARRAY_MODE   0x206
+%equ NVC0_3D_BLEND_ENABLE    0x4d8
+%equ NVC0_3D_CLEAR_BUFFERS   0x674
+%equ NVC0_3D_LOGIC_OP_ENABLE 0x671
+%equ NVC0_3D_FIRMWARE        0x8c0
+%equ NVC0_3D_CB_SIZE         0x8e0
+%equ MME_SCRATCH             0xd00
+
+%equ NVC0_3D_CLEAR_BUFFERS_RT__SHIFT    6
+%equ NVC0_3D_CLEAR_BUFFERS_LAYER__SHIFT 10
+
+# Arguments:
+#   0 - Argument for NVC0_3D_CLEAR_BUFFERS
+ClearColor::
+  ei 4:rz NVC0_3D_CLEAR_BUFFERS_RT__SHIFT:r1 4 to r2
+  ldr r2 NVC0_3D_RT_ARRAY_MODE to r2
+  bza r2 .end
+.loop
+    NVC0_3D_CLEAR_BUFFERS'0 to addr
+    dec r2 to r2
+    r1 to mem
+    *bnz r2 .loop
+    addi r1 1<<NVC0_3D_CLEAR_BUFFERS_LAYER__SHIFT to r1
+.end
+  exit
+  nop
+
+# Firmware call: writes masked bits to a hardware register
+# Arguments:
+#   0 - Hardware register (see rnndb/graph/gf100_pgraph)
+#   1 - Value to write
+#   2 - Write mask
+FirmwareCall::
+  NVC0_WAIT_FOR_IDLE'0 to addr'mem
+  MME_SCRATCH[0x00]'1 to addr; fetch r4
+  fetch r3
+  rz to mem
+  r4 to mem
+  r3 to mem
+  NVC0_3D_FIRMWARE[4]'0 to addr
+  r1 to mem
+  ldi MME_SCRATCH[0x1a] to r1
+  mask r1 8 to r1
+  subi r1 2 to r1
+  bza r1 .else
+  ldi MME_SCRATCH[0x00] to r1
+  1 to r2
+.loop
+    sub r1 r2 to r1
+    bza r1 .end
+    NVC0_NO_OPERATION'0 to addr'mem
+    b .loop
+    *ldi MME_SCRATCH[0x00] to r1
+    nop
+.else
+  10 to r2
+.loop2
+    dec r2 to r2
+    *bnz r2 .loop2
+    NVC0_NO_OPERATION'0 to addr'mem
+.end
+  exit
+  nop
+
+# Arguments:
+#   0 - First word from NvnColorState (containing blend enable params in bits 8..15)
+SetColorBlendEnable::
+  NVC0_3D_LOGIC_OP_ENABLE'0 to addr'mem
+  NVC0_3D_BLEND_ENABLE'1    to addr
+  bit  r1 8  to mem
+  bit  r1 9  to mem
+  bit  r1 10 to mem
+  bit  r1 11 to mem
+  bit  r1 12 to mem
+  bit  r1 13 to mem
+  *bit r1 14 to mem
+  bit  r1 15 to mem
+
+# Arguments:
+#   0 - Constbuf size
+#   1 - Constbuf iova high
+#   2 - Constbuf iova low
+SelectConstbuf::
+  NVC0_3D_CB_SIZE'1 to addr
+  r1 to mem; fetch r1
+  *r1 to mem; fetch r1
+  r1 to mem

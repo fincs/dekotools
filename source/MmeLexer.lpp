@@ -1,0 +1,144 @@
+%{
+#include "MmeDocument.h"
+#include "MmeParser.hpp"
+#define YYSTYPE MME_STYPE
+#define YYLTYPE MME_LTYPE
+
+namespace
+{
+	const std::map<std::string, int> keywords
+	{
+		{ "adc",   KW_ADC   },
+		{ "add",   KW_ADD   },
+		{ "addi",  KW_ADDI  },
+		{ "addr",  KW_ADDR  },
+		{ "and",   KW_AND   },
+		{ "b",     KW_B     },
+		{ "ba",    KW_BA    },
+		{ "bfl",   KW_BFL   },
+		{ "bic",   KW_BIC   },
+		{ "bit",   KW_BIT   },
+		{ "bnz",   KW_BNZ   },
+		{ "bnza",  KW_BNZA  },
+		{ "bz",    KW_BZ    },
+		{ "bza",   KW_BZA   },
+		{ "dec",   KW_DEC   },
+		{ "ei",    KW_EI    },
+		{ "esli",  KW_ESLI  },
+		{ "eslr",  KW_ESLR  },
+		{ "exit",  KW_EXIT  },
+		{ "fetch", KW_FETCH },
+		{ "inc",   KW_INC   },
+		{ "ld",    KW_LD    },
+		{ "ldi",   KW_LDI   },
+		{ "ldr",   KW_LDR   },
+		{ "lsl",   KW_LSL   },
+		{ "lsr",   KW_LSR   },
+		{ "mask",  KW_MASK  },
+		{ "mem",   KW_MEM   },
+		{ "nan",   KW_NAN   },
+		{ "neg",   KW_NEG   },
+		{ "nop",   KW_NOP   },
+		{ "not",   KW_NOT   },
+		{ "orr",   KW_ORR   },
+		{ "sbc",   KW_SBC   },
+		{ "sub",   KW_SUB   },
+		{ "subi",  KW_SUBI  },
+		{ "to",    KW_TO    },
+		{ "xor",   KW_XOR   },
+	};
+}
+
+#define YY_USER_ACTION                          \
+    yylloc->first_line   = yylloc->last_line;   \
+    yylloc->first_column = yylloc->last_column; \
+    for (int i = 0; yytext[i]; i++) {           \
+        if (yytext[i] == '\n') {                \
+            yylloc->last_line++;                \
+            yylloc->last_column = 1;            \
+        } else                                  \
+            yylloc->last_column++;              \
+    }
+
+%}
+
+%option prefix="mme_"
+%option warn nodefault
+%option noyywrap nounput
+%option reentrant bison-bridge bison-locations
+
+decdigit  [0-9]
+hexprefix 0[xX]
+hexdigit  [0-9a-fA-F]
+
+%%
+
+[ \t]+ {
+	// Nothing
+}
+
+#[^\r\n]* {
+	// Nothing
+}
+
+[\r\n]+ {
+	return '\n';
+}
+
+\"(\\.|[^"])*\" {
+	yylval->str = new std::string(&yytext[1], yyleng-2);
+	return STRING;
+}
+
+"::" {
+	return TK_DOUBLECOLON;
+}
+
+"<<" {
+	return TK_LSL;
+}
+
+">>>" {
+	return TK_LSR;
+}
+
+">>" {
+	return TK_ASR;
+}
+
+"%equ" {
+	return DIR_EQU;
+}
+
+{hexprefix}{hexdigit}+ {
+	yylval->value = strtol(yytext, NULL, 0);
+	return VALUE;
+}
+
+{decdigit}+ {
+	yylval->value = strtol(yytext, NULL, 0);
+	return VALUE;
+}
+
+[rR][zZ0-7] {
+	char val = yytext[1];
+	if (val == 'z' || val == 'Z') val = '0';
+	yylval->value = val - '0';
+	return REGISTER;
+}
+
+[a-zA-Z_][a-zA-Z0-9_]* {
+	std::string kw = yytext;
+	std::transform(kw.begin(), kw.end(), kw.begin(), [](char ch) -> char {
+		return ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch;
+	});
+	auto kit = keywords.find(kw);
+	if (kit != keywords.end())
+		return kit->second;
+	yylval->str = new std::string(yytext);
+	return IDENTIFIER;
+}
+
+. {
+	return yytext[0];
+}

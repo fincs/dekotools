@@ -1,0 +1,200 @@
+%{
+#include "MmeDocument.h"
+#include "MmeParser.hpp"
+#define yyscan_t mme_scan_t
+#define YYSTYPE MME_STYPE
+#define YYLTYPE MME_LTYPE
+#include "MmeLexer.hpp"
+
+using aluop = mme::AluOperation;
+using resop = mme::ResultOperation;
+using brcond = mme::BranchCondition;
+
+void mme_error(MME_LTYPE *llocp, void* scanner, MmeDocument& doc, char const* curFile, char const *msg);
+
+#define print_error(...) yyerror(&yylloc, scanner, doc, curFile, __VA_ARGS__);
+#define fail_if_not_ok(...) do { \
+	if (!ok) { \
+		print_error(__VA_ARGS__); \
+		return -1; \
+	} \
+} while(0)
+
+%}
+
+%code requires {
+#define MME_LTYPE mme_ltype
+#define MME_LTYPE_IS_TRIVIAL 1
+typedef struct mme_ltype mme_ltype;
+struct mme_ltype
+{
+	int first_line, first_column;
+	int last_line, last_column;
+	int split_nest;
+};
+}
+
+%verbose
+%define api.prefix  {mme_}
+%define api.pure    full
+%define parse.error verbose
+%param              {void* scanner}
+%parse-param        {MmeDocument& doc}
+%parse-param        {char const* curFile}
+%locations
+
+%union {
+	int32_t                   value;
+	std::string              *str;
+}
+
+%token               KW_ADC KW_ADD KW_ADDI KW_ADDR KW_AND KW_B KW_BA KW_BFL KW_BIC KW_BIT KW_BNZ KW_BNZA KW_BZ KW_BZA KW_DEC KW_EI KW_ESLI KW_ESLR KW_EXIT KW_FETCH KW_INC KW_LD KW_LDI KW_LDR KW_LSL KW_LSR KW_MASK KW_MEM KW_NAN KW_NEG KW_NOP KW_NOT KW_ORR KW_SBC KW_SUB KW_SUBI KW_TO KW_XOR
+%token               TK_DOUBLECOLON TK_LSL TK_LSR TK_ASR
+%token               DIR_EQU
+%token<value>        VALUE REGISTER
+%token<str>          IDENTIFIER STRING
+%type<value>         INSTRUCTION I_BRANCH I_FETCH I_SOURCE I_TARGET
+%type<value>         EXPR
+
+%left  '\''
+%left  '|'
+%left  '^'
+%left  '&'
+%left  TK_LSL TK_LSR TK_ASR
+%left  '+' '-'
+%left  '*' '/' '%'
+%right UPLUS UMINUS UBNOT
+%left '[' '('
+
+%destructor { } <value>
+%destructor { delete $$; } <*>
+
+%%
+
+DOCUMENT: LINE | DOCUMENT '\n' LINE;
+
+LINE: %empty |
+DIR_EQU IDENTIFIER EXPR
+{
+	bool ok = doc.VisitEqu(std::move(*$2), $3);
+	delete $2;
+	fail_if_not_ok("duplicate %equ");
+} |
+LABEL STATEMENT |
+LABEL |
+STATEMENT;
+
+LABEL:
+'.' IDENTIFIER
+{
+	bool ok = doc.VisitLocalLabel(std::move(*$2));
+	delete $2;
+	fail_if_not_ok("duplicate local label");
+} |
+IDENTIFIER ':'
+{
+	bool ok = doc.VisitLabel(std::move(*$1), false);
+	delete $1;
+	fail_if_not_ok("duplicate label");
+} |
+IDENTIFIER TK_DOUBLECOLON
+{
+	bool ok = doc.VisitLabel(std::move(*$1), true);
+	delete $1;
+	fail_if_not_ok("duplicate label");
+};
+
+STATEMENT:
+	INSTRUCTION { doc.VisitInstruction($1); } |
+	'*' INSTRUCTION { doc.VisitInstruction(mme::ExitBit | $2); };
+
+INSTRUCTION:
+	KW_NOP { $$ = mme::MakeNop(); } |
+	KW_EXIT { $$ = mme::ExitBit | mme::MakeNop(); } |
+	I_BRANCH { $$ = $1; } |
+	I_FETCH { $$ = $1; } |
+	I_SOURCE KW_TO I_TARGET { $$ = $1 | $3; };
+
+I_BRANCH:
+	KW_B BRANCH_TARGET { $$ = mme::MakeBranch(brcond::Zero, 0); } |
+	KW_BA BRANCH_TARGET { $$ = mme::MakeBranch(brcond::ZeroAnnul, 0); } |
+	KW_BZ REGISTER BRANCH_TARGET { $$ = mme::MakeBranch(brcond::Zero, $2); } |
+	KW_BZA REGISTER BRANCH_TARGET { $$ = mme::MakeBranch(brcond::ZeroAnnul, $2); } |
+	KW_BNZ REGISTER BRANCH_TARGET { $$ = mme::MakeBranch(brcond::NotZero, $2); } |
+	KW_BNZA REGISTER BRANCH_TARGET { $$ = mme::MakeBranch(brcond::NotZeroAnnul, $2); };
+
+BRANCH_TARGET:
+	'.' IDENTIFIER { doc.VisitLabelRef(std::move(*$2), true); delete $2; } |
+	IDENTIFIER { doc.VisitLabelRef(std::move(*$1), false); delete $1; };
+
+I_FETCH:
+	KW_FETCH REGISTER { $$ = mme::MakeNopSource() | mme::MakeResult(resop::IgnoreAndFetch, $2); };
+
+I_SOURCE:
+	EXPR { $$ = mme::MakeAddImmediate(0, $1); } |
+	REGISTER { $$ = mme::MakeAddImmediate($1, 0); } |
+	KW_LDI EXPR { $$ = mme::MakeRead(0, $2); } |
+	KW_LD REGISTER { $$ = mme::MakeRead($2, 0); } |
+	KW_NOT REGISTER { $$ = mme::MakeAlu(aluop::Nand, $2, $2); } |
+	KW_NEG REGISTER { $$ = mme::MakeAlu(aluop::Add, 0, $2); } |
+	KW_INC REGISTER { $$ = mme::MakeAddImmediate($2, +1); } |
+	KW_DEC REGISTER { $$ = mme::MakeAddImmediate($2, -1); } |
+	KW_LDR REGISTER EXPR { $$ = mme::MakeRead($2, $3); } |
+	KW_ADDI REGISTER EXPR { $$ = mme::MakeAddImmediate($2, $3); } |
+	KW_SUBI REGISTER EXPR { $$ = mme::MakeAddImmediate($2, -$3); } |
+	KW_BIT REGISTER EXPR { $$ = mme::MakeExtractInsert(0, 0, $3, $2, 1); } |
+	KW_LSL REGISTER EXPR { $$ = mme::MakeExtractInsert($3, 0, 0, $2, 32-$3); } |
+	KW_LSR REGISTER EXPR { $$ = mme::MakeExtractInsert(0, 0, $3, $2, 32-$3); } |
+	KW_MASK REGISTER EXPR { $$ = mme::MakeExtractInsert(0, 0, 0, $2, $3); } |
+	KW_BFL EXPR ':' REGISTER EXPR { $$ = mme::MakeExtractInsert(0, 0, $2, $4, $5); } |
+	KW_ADD REGISTER REGISTER { $$ = mme::MakeAlu(aluop::Add, $2, $3); } |
+	KW_ADC REGISTER REGISTER { $$ = mme::MakeAlu(aluop::AddWithCarry, $2, $3); } |
+	KW_SUB REGISTER REGISTER { $$ = mme::MakeAlu(aluop::Subtract, $2, $3); } |
+	KW_SBC REGISTER REGISTER { $$ = mme::MakeAlu(aluop::SubtractWithBorrow, $2, $3); } |
+	KW_XOR REGISTER REGISTER { $$ = mme::MakeAlu(aluop::Xor, $2, $3); } |
+	KW_ORR REGISTER REGISTER { $$ = mme::MakeAlu(aluop::Or, $2, $3); } |
+	KW_AND REGISTER REGISTER { $$ = mme::MakeAlu(aluop::And, $2, $3); } |
+	KW_BIC REGISTER REGISTER { $$ = mme::MakeAlu(aluop::AndNot, $2, $3); } |
+	KW_NAN REGISTER REGISTER { $$ = mme::MakeAlu(aluop::Nand, $2, $3); } |
+	KW_ESLR REGISTER EXPR ':' REGISTER EXPR { $$ = mme::MakeExtractShiftLeftRegister($2, $3, $5, $6); } |
+	KW_ESLI EXPR ':' REGISTER REGISTER EXPR { $$ = mme::MakeExtractShiftLeftImmediate($2, $4, $5, $6); } |
+	KW_EI EXPR ':' REGISTER EXPR ':' REGISTER EXPR { $$ = mme::MakeExtractInsert($2, $4, $5, $7, $8); };
+
+I_TARGET:
+	KW_ADDR ';' KW_FETCH KW_MEM { $$ = mme::MakeResult(resop::MoveAndSetMethodFetchAndSend, 0); } |
+	KW_ADDR ';' KW_FETCH REGISTER { $$ = mme::MakeResult(resop::FetchAndSetMethod, $4); } |
+	KW_ADDR '\'' KW_MEM { $$ = mme::MakeResult(resop::MoveAndSetMethodSend, 0); } |
+	KW_ADDR { $$ = mme::MakeResult(resop::MoveAndSetMethod, 0); } |
+	KW_MEM ';' KW_FETCH REGISTER { $$ = mme::MakeResult(resop::FetchAndSend, $4); } |
+	KW_MEM { $$ = mme::MakeResult(resop::MoveAndSend, 0); } |
+	REGISTER KW_ADDR ';' KW_FETCH KW_MEM { $$ = mme::MakeResult(resop::MoveAndSetMethodFetchAndSend, $1); } |
+	REGISTER KW_ADDR '\'' KW_MEM { $$ = mme::MakeResult(resop::MoveAndSetMethodSend, $1); } |
+	REGISTER KW_ADDR { $$ = mme::MakeResult(resop::MoveAndSetMethod, $1); } |
+	REGISTER KW_MEM { $$ = mme::MakeResult(resop::MoveAndSend, $1); } |
+	REGISTER { $$ = mme::MakeResult(resop::Move, $1); };
+
+EXPR:
+VALUE                 { $$ = $1;       } |
+IDENTIFIER
+{
+	bool ok = doc.VisitExprIdent(std::move(*$1), $$);
+	delete $1;
+	fail_if_not_ok("unknown identifier");
+} |
+EXPR '\'' EXPR        { $$ = ($1 & 0xFFF) | (($3 & 0x3F) << 12); } |
+EXPR '|' EXPR         { $$ = $1 | $3;  } |
+EXPR '^' EXPR         { $$ = $1 ^ $3;  } |
+EXPR '&' EXPR         { $$ = $1 & $3;  } |
+EXPR TK_LSL EXPR      { $$ = $1 << $3; } |
+EXPR TK_LSR EXPR      { $$ = uint32_t($1) >> $3; } |
+EXPR TK_ASR EXPR      { $$ =  int32_t($1) >> $3; } |
+EXPR '+' EXPR         { $$ = $1 + $3;  } |
+EXPR '-' EXPR         { $$ = $1 - $3;  } |
+EXPR '*' EXPR         { $$ = $1 * $3;  } |
+EXPR '/' EXPR         { $$ = $1 / $3;  } |
+EXPR '%' EXPR         { $$ = $1 % $3;  } |
+'+' EXPR %prec UPLUS  { $$ = $2;       } |
+'-' EXPR %prec UMINUS { $$ = -$2;      } |
+'~' EXPR %prec UBNOT  { $$ = ~$2;      } |
+EXPR '[' EXPR ']'     { $$ = $1 + $3;  } |
+'(' EXPR ')'          { $$ = $2;       };
