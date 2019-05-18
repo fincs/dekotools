@@ -67,6 +67,8 @@ namespace
 %option noyywrap nounput
 %option reentrant bison-bridge bison-locations
 
+%x COMMENT
+
 decdigit  [0-9]
 hexprefix 0[xX]
 hexdigit  [0-9a-fA-F]
@@ -75,6 +77,24 @@ hexdigit  [0-9a-fA-F]
 
 [ \t]+ {
 	// Nothing
+}
+
+<INITIAL>{
+"#[" {
+	BEGIN(COMMENT);
+}
+}
+
+<COMMENT>{
+"#]" {
+	BEGIN(INITIAL);
+}
+[^#]+ {
+	// Eat comment in chunks
+}
+"#" {
+	// Eat the lone hash
+}
 }
 
 #[^\r\n]* {
