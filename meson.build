@@ -32,3 +32,10 @@ dekomme = executable(
 	include_directories: inc,
 	install: true,
 )
+
+dekodef = executable(
+	'dekodef',
+	dekodef_files,
+	include_directories: inc,
+	install: true,
+)

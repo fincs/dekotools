@@ -1,0 +1,115 @@
+%{
+#include "DefDocument.h"
+#include "DefParser.hpp"
+#define YYSTYPE DEF_STYPE
+#define YYLTYPE DEF_LTYPE
+
+namespace
+{
+	const std::map<std::string, int> keywords
+	{
+		{ "array",  KW_ARRAY  },
+		{ "bits",   KW_BITS   },
+		{ "bool",   KW_BOOL   },
+		{ "float",  KW_FLOAT  },
+		{ "engine", KW_ENGINE },
+		{ "enum",   KW_ENUM   },
+		{ "iova",   KW_IOVA   },
+		{ "next",   KW_NEXT   },
+		{ "pipe",   KW_PIPE   },
+	};
+}
+
+#define YY_USER_ACTION                          \
+    yylloc->first_line   = yylloc->last_line;   \
+    yylloc->first_column = yylloc->last_column; \
+    for (int i = 0; yytext[i]; i++) {           \
+        if (yytext[i] == '\n') {                \
+            yylloc->last_line++;                \
+            yylloc->last_column = 1;            \
+        } else                                  \
+            yylloc->last_column++;              \
+    }
+
+%}
+
+%option prefix="def_"
+%option warn nodefault
+%option noyywrap nounput
+%option reentrant bison-bridge bison-locations
+
+%x COMMENT
+
+decdigit  [0-9]
+hexprefix 0[xX]
+hexdigit  [0-9a-fA-F]
+
+%%
+
+<INITIAL>{
+[ \t\n\r]+ {
+	// Nothing
+}
+"/*" {
+	BEGIN(COMMENT);
+}
+}
+
+<COMMENT>{
+"*/" {
+	BEGIN(INITIAL);
+}
+[^*]+ {
+	// Eat comment in chunks
+}
+"*" {
+	// Eat the lone star
+}
+}
+
+\/\/[^\r\n]* {
+	// Nothing
+}
+
+\"(\\.|[^"])*\" {
+	yylval->str = new std::string(&yytext[1], yyleng-2);
+	return STRING;
+}
+
+\.{2,} {
+	return TK_MULTIDOT;
+}
+
+"<<" {
+	return TK_LSL;
+}
+
+">>>" {
+	return TK_LSR;
+}
+
+">>" {
+	return TK_ASR;
+}
+
+{hexprefix}{hexdigit}+ {
+	yylval->value = strtol(yytext, NULL, 0);
+	return VALUE;
+}
+
+{decdigit}+ {
+	yylval->value = strtol(yytext, NULL, 0);
+	return VALUE;
+}
+
+[a-zA-Z_][a-zA-Z0-9_]* {
+	auto kit = keywords.find(yytext);
+	if (kit != keywords.end())
+		return kit->second;
+	yylval->str = new std::string(yytext);
+	return IDENTIFIER;
+}
+
+. {
+	return yytext[0];
+}

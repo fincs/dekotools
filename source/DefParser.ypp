@@ -1,0 +1,203 @@
+%{
+#include "DefDocument.h"
+#include "DefParser.hpp"
+#define yyscan_t def_scan_t
+#define YYSTYPE DEF_STYPE
+#define YYLTYPE DEF_LTYPE
+#include "DefLexer.hpp"
+
+void def_error(DEF_LTYPE *llocp, void* scanner, DefDocument& doc, char const* curFile, char const *msg);
+
+#define print_error(...) yyerror(&yylloc, scanner, doc, curFile, __VA_ARGS__);
+#define check_error do { \
+	if (err) { \
+		print_error(err); \
+		return -1; \
+	} \
+} while(0)
+
+%}
+
+%code requires {
+#define DEF_LTYPE def_ltype
+#define DEF_LTYPE_IS_TRIVIAL 1
+typedef struct def_ltype def_ltype;
+struct def_ltype
+{
+	int first_line, first_column;
+	int last_line, last_column;
+};
+}
+
+%verbose
+%define api.prefix  {def_}
+%define api.pure    full
+%define parse.error verbose
+%param              {void* scanner}
+%parse-param        {DefDocument& doc}
+%parse-param        {char const* curFile}
+%locations
+
+%union {
+	int32_t                      value;
+	TrivialPair<int32_t,int32_t> value_pair;
+	std::string                 *str;
+}
+
+%token               KW_ARRAY KW_BITS KW_BOOL KW_FLOAT KW_ENGINE KW_ENUM KW_IOVA KW_NEXT KW_PIPE
+%token               TK_MULTIDOT TK_LSL TK_LSR TK_ASR
+%token<value>        VALUE
+%token<str>          IDENTIFIER STRING
+%type<value>         EXPR DOCUMENTATION REG_ARRAY_SIZE ARRAY_SIZE ARRAY_NEXT
+%type<value_pair>    BITRANGE TYPE TYPE_SUBSET
+
+%left  '|'
+%left  '^'
+%left  '&'
+%left  TK_LSL TK_LSR TK_ASR
+%left  '+' '-'
+%left  '*' '/' '%'
+%right UPLUS UMINUS UBNOT
+%left  '('
+
+%destructor { } <value> <value_pair>
+%destructor { delete $$; } <*>
+
+%%
+
+DOCUMENT: ENGINE STATEMENT_LIST;
+
+ENGINE: KW_ENGINE IDENTIFIER EXPR DOCUMENTATION ';'
+{
+	auto err = doc.VisitEngine(std::move(*$2), $3, $4);
+	delete $2;
+	check_error;
+};
+
+STATEMENT_LIST: %empty | STATEMENT_LIST STATEMENT;
+
+STATEMENT:
+STATEMENT_REG |
+STATEMENT_ARRAY |
+STATEMENT_ENUM;
+
+STATEMENT_REG:
+EXPR IDENTIFIER DOCUMENTATION REG_ARRAY_SIZE TYPE ';'
+{
+	auto err = doc.VisitReg($1, std::move(*$2), $3, $4, $5);
+	delete $2;
+	check_error;
+};
+
+STATEMENT_ARRAY:
+EXPR IDENTIFIER DOCUMENTATION ARRAY_SIZE '(' {doc.PushArray();} ARRAY_BODY ARRAY_NEXT ')' ';'
+{
+	auto err = doc.VisitArray($1, std::move(*$2), $3, $4, doc.PopArray(), $8);
+	delete $2;
+	check_error;
+};
+
+STATEMENT_ENUM:
+KW_ENUM IDENTIFIER DOCUMENTATION '(' ENUM_BODY ')' ';'
+{
+	auto err = doc.VisitEnum(std::move(*$2), $3, doc.PopEnumBody());
+	delete $2;
+	check_error;
+};
+
+REG_ARRAY_SIZE:
+%empty { $$ = 1; } |
+ARRAY_SIZE { $$ = $1; };
+
+ARRAY_SIZE:
+KW_ARRAY '[' EXPR ']'
+{
+	$$ = $3;
+	if ($$ < 1)
+	{
+		print_error("Invalid array size");
+		return -1;
+	}
+};
+
+TYPE:
+TYPE_SUBSET { $$ = $1; } |
+KW_FLOAT { $$ = DefDocument::MakeTypeFloat(); } |
+KW_IOVA { $$ = DefDocument::MakeTypeIova(); } |
+KW_BITS '(' BITS_BODY ')' { $$ = DefDocument::MakeTypeBits(doc.PopBitsBody()); };
+
+TYPE_SUBSET:
+%empty { $$ = DefDocument::MakeTypeUint(); } |
+KW_BOOL { $$ = DefDocument::MakeTypeBool(); } |
+KW_PIPE { $$ = DefDocument::MakeTypePipe(); } |
+KW_ENUM '(' ENUM_BODY ')' { $$ = DefDocument::MakeTypeEnum(doc.PopEnumBody()); };
+
+ENUM_BODY: %empty | ENUM_BODY ENUM_FIELD;
+
+ENUM_FIELD:
+EXPR IDENTIFIER DOCUMENTATION ';'
+{
+	auto err = doc.VisitEnumField($1, std::move(*$2), $3);
+	delete $2;
+	check_error;
+};
+
+BITS_BODY: %empty | BITS_BODY BITS_FIELD;
+
+BITS_FIELD:
+BITRANGE IDENTIFIER DOCUMENTATION TYPE_SUBSET ';'
+{
+	auto err = doc.VisitBitsField($1, std::move(*$2), $3, $4);
+	delete $2;
+	check_error;
+};
+
+BITRANGE:
+EXPR
+{
+	$$.first = $$.second = $1;
+	if ($$.first < 0 || $$.second >= 32)
+	{
+		print_error("Invalid bit index");
+		return -1;
+	}
+} |
+EXPR TK_MULTIDOT EXPR
+{
+	$$.first = $1;
+	$$.second = $3;
+	if ($$.second < $$.first)
+		std::swap($$.first, $$.second);
+	if ($$.first < 0 || $$.second >= 32)
+	{
+		print_error("Invalid bit range");
+		return -1;
+	}
+};
+
+ARRAY_BODY: %empty | ARRAY_BODY STATEMENT_REG;
+
+ARRAY_NEXT:
+EXPR KW_NEXT ';' { $$ = $1; }
+
+DOCUMENTATION:
+%empty { $$ = -1; } |
+STRING { $$ = doc.VisitDoc(std::move(*$1)); delete $1; };
+
+EXPR:
+VALUE                 { $$ = $1;       } |
+EXPR '|' EXPR         { $$ = $1 | $3;  } |
+EXPR '^' EXPR         { $$ = $1 ^ $3;  } |
+EXPR '&' EXPR         { $$ = $1 & $3;  } |
+EXPR TK_LSL EXPR      { $$ = $1 << $3; } |
+EXPR TK_LSR EXPR      { $$ = uint32_t($1) >> $3; } |
+EXPR TK_ASR EXPR      { $$ =  int32_t($1) >> $3; } |
+EXPR '+' EXPR         { $$ = $1 + $3;  } |
+EXPR '-' EXPR         { $$ = $1 - $3;  } |
+EXPR '*' EXPR         { $$ = $1 * $3;  } |
+EXPR '/' EXPR         { $$ = $1 / $3;  } |
+EXPR '%' EXPR         { $$ = $1 % $3;  } |
+'+' EXPR %prec UPLUS  { $$ = $2;       } |
+'-' EXPR %prec UMINUS { $$ = -$2;      } |
+'~' EXPR %prec UBNOT  { $$ = ~$2;      } |
+'(' EXPR ')'          { $$ = $2;       };
