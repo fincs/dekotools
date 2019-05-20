@@ -49,8 +49,14 @@ int main(int argc, char* argv[])
 
 	if (hFile)
 	{
-		fprintf(stderr, "%s: not implemented\n", hFile);
-		// todo
+		FILE* f = fopen(hFile, "w");
+		if (!f)
+		{
+			fprintf(stderr, "could not open file: %s\n", hFile);
+			return EXIT_FAILURE;
+		}
+		doc.EmitCppHeader(f);
+		fclose(f);
 	}
 
 	if (mmeFile)
