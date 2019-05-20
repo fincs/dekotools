@@ -22,7 +22,7 @@ void DefDocument::EmitCppHeader(FILE* f)
 			fprintf(f, "%s\t\tusing __bit::__bit;\n", indent);
 			if (bit.type.first == Field::Enum)
 				for (auto& val : m_enumBodies[bit.type.second])
-					fprintf(f, "%s\t\tstatic constexpr uint32_t %s = 0x%08X;\n", indent,
+					fprintf(f, "%s\t\tstatic constexpr unsigned %s = 0x%08X;\n", indent,
 						val.name.c_str(), val.value<<bit.bits.first);
 			fprintf(f, "%s\t};\n", indent);
 		};
@@ -56,7 +56,7 @@ void DefDocument::EmitCppHeader(FILE* f)
 					break;
 				case Field::Enum:
 					for (auto& val : m_enumBodies[field.type.second])
-						fprintf(f, "%s\tstatic constexpr uint32_t %s = %u;\n", indent,
+						fprintf(f, "%s\tstatic constexpr auto %s = %d;\n", indent,
 							val.name.c_str(), val.value);
 					break;
 			}
@@ -65,42 +65,41 @@ void DefDocument::EmitCppHeader(FILE* f)
 		return impl(field, false, impl);
 	};
 
-	fprintf(f, "#pragma once\n");
-	fprintf(f, "#include <stdint.h>\n\n");
+	fprintf(f, "#pragma once\n\n");
 	fprintf(f, "namespace maxwell {\n\n");
 	fprintf(f, "#ifndef __dekodef_helpers\n");
 	fprintf(f, "#define __dekodef_helpers\n");
-	fprintf(f, "\ttemplate <typename T> constexpr auto ClassId = T::__classid;\n");
-	fprintf(f, "\ttemplate <typename T, uint16_t index, uint16_t size>\n");
+	fprintf(f, "\ttemplate <typename T> constexpr unsigned ClassId = T::__classid;\n");
+	fprintf(f, "\ttemplate <typename T, unsigned index, unsigned size>\n");
 	fprintf(f, "\tstruct __reg {\n");
 	fprintf(f, "\t\tusing Parent = T;\n");
-	fprintf(f, "\t\tstatic constexpr auto Index = index;\n");
-	fprintf(f, "\t\tstatic constexpr auto Size = size;\n");
-	fprintf(f, "\t\tconst uint16_t __idx;\n");
-	fprintf(f, "\t\tconstexpr operator uint16_t() const noexcept { return __idx; }\n");
+	fprintf(f, "\t\tstatic constexpr unsigned Index = index;\n");
+	fprintf(f, "\t\tstatic constexpr unsigned Size = size;\n");
+	fprintf(f, "\t\tconst unsigned __idx;\n");
+	fprintf(f, "\t\tconstexpr operator unsigned() const noexcept { return __idx; }\n");
 	fprintf(f, "\t\tconstexpr __reg() noexcept : __idx{Index} {}\n");
-	fprintf(f, "\t\tconstexpr __reg(uint16_t i) noexcept : __idx{ Parent::Index + i*Parent::Size + Index } {}\n");
+	fprintf(f, "\t\tconstexpr __reg(unsigned i) noexcept : __idx{ Parent::Index + i*Parent::Size + Index } {}\n");
 	fprintf(f, "\t};\n");
-	fprintf(f, "\ttemplate <typename T, uint16_t index, uint16_t count, unsigned shift>\n");
+	fprintf(f, "\ttemplate <typename T, unsigned index, unsigned count, unsigned shift>\n");
 	fprintf(f, "\tstruct __array : __reg<T,index,(1U<<shift)> {\n");
 	fprintf(f, "\t\tusing Parent = T;\n");
 	fprintf(f, "\t\tstatic constexpr bool __isarray = true;\n");
-	fprintf(f, "\t\tstatic constexpr auto Count = count;\n");
-	fprintf(f, "\t\tstatic constexpr auto Shift = shift;\n");
+	fprintf(f, "\t\tstatic constexpr unsigned Count = count;\n");
+	fprintf(f, "\t\tstatic constexpr unsigned Shift = shift;\n");
 	fprintf(f, "\t};\n");
 	fprintf(f, "\ttemplate <unsigned shift, unsigned size>\n");
 	fprintf(f, "\tstruct __bit {\n");
-	fprintf(f, "\t\tstatic constexpr auto Shift = shift;\n");
-	fprintf(f, "\t\tstatic constexpr auto Size = size;\n");
-	fprintf(f, "\t\tstatic constexpr uint32_t Mask = ((1U<<Size)-1)<<Shift;\n");
-	fprintf(f, "\t\tconst uint32_t __value;\n");
-	fprintf(f, "\t\tconstexpr operator uint32_t() const noexcept { return __value; }\n");
-	fprintf(f, "\t\tconstexpr __bit(uint32_t x = UINT32_MAX) noexcept : __value{ (x<<Shift) & Mask } {}\n");
+	fprintf(f, "\t\tstatic constexpr unsigned Shift = shift;\n");
+	fprintf(f, "\t\tstatic constexpr unsigned Size = size;\n");
+	fprintf(f, "\t\tstatic constexpr unsigned Mask = ((1U<<Size)-1)<<Shift;\n");
+	fprintf(f, "\t\tconst unsigned __value;\n");
+	fprintf(f, "\t\tconstexpr operator unsigned() const noexcept { return __value; }\n");
+	fprintf(f, "\t\tconstexpr __bit(unsigned x = ~0U) noexcept : __value{ (x<<Shift) & Mask } {}\n");
 	fprintf(f, "\t};\n");
 	fprintf(f, "#endif\n\n");
 	fprintf(f, "\tstruct %s {\n", engineName.c_str());
 	fprintf(f, "\t\tusing __self = %s;\n", engineName.c_str());
-	fprintf(f, "\t\tstatic constexpr auto __classid = 0x%04x;\n", m_engineClass);
+	fprintf(f, "\t\tstatic constexpr unsigned __classid = 0x%04x;\n", m_engineClass);
 
 	for (auto& field : m_fields)
 		emitField(field);
