@@ -35,7 +35,7 @@ void DefDocument::EmitMme(FILE* f)
 			uint32_t numbits = 1 + bit.bits.second - bit.bits.first;
 			emitHex(name.c_str(), "", ((1U<<numbits)-1)<<bit.bits.first);
 			if (bit.type.first == Field::Enum)
-				for (auto& val : m_enumBodies[body])
+				for (auto& val : m_enumBodies[bit.type.second])
 					emitHex(name.c_str(), val.name.c_str(), val.value<<bit.bits.first);
 			emitValue(name.c_str(), "_Size", numbits);
 			emitValue(name.c_str(), "_Shift", bit.bits.first);
