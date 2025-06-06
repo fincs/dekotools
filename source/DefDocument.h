@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <algorithm>
+#include <cstdint>
 
 template <typename U, typename V>
 struct TrivialPair
